@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: default
+  name: orderer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      org: orderer-example-com
+      name: orderer
+  template:
+    metadata:
+      labels:
+        org: orderer-example-com
+        name: orderer
+    spec:
+      containers:
+      - name: orderer
+        image: hyperledger/fabric-orderer:1.4.3
+        env:
+        - name: ORDERER_GENERAL_LOGLEVEL
+          value: debug
+        - name: ORDERER_GENERAL_LISTENADDRESS
+          value: 0.0.0.0
+        - name: ORDERER_GENERAL_GENESISMETHOD
+          value: file
+        - name: ORDERER_GENERAL_GENESISFILE
+          value: /var/hyperledger/orderer/orderer.genesis.block
+        - name: ORDERER_GENERAL_LOCALMSPID
+          value: OrdererMSP
+        - name: ORDERER_GENERAL_LOCALMSPDIR
+          value: /var/hyperledger/orderer/msp
+        - name: ORDERER_GENERAL_TLS_ENABLED
+          value: "true"
+        - name: ORDERER_GENERAL_TLS_PRIVATEKEY
+          value: /var/hyperledger/orderer/tls/server.key
+        - name: ORDERER_GENERAL_TLS_CERTIFICATE
+          value: /var/hyperledger/orderer/tls/server.crt
+        - name: ORDERER_GENERAL_TLS_ROOTCAS
+          value: '[/var/hyperledger/orderer/tls/ca.crt]'
+        - name: ORDERER_KAFKA_RETRY_SHORTINTERVAL
+          value: "1s"
+        - name: ORDERER_KAFKA_RETRY_SHORTTOTAL
+          value: "30s"
+        - name: ORDERER_KAFKA_VERBOSE
+          value: "true"
+        workingDir: /opt/gopath/src/github.com/hyperledger/fabric
+        command: ["orderer"]
+        volumeMounts:
+         - mountPath: /var/hyperledger/orderer/msp
+           name: current-dir
+           subPath: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/msp
+         - mountPath: /var/hyperledger/orderer/tls
+           name: current-dir
+           subPath: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls
+         - mountPath: /var/hyperledger/orderer/orderer.genesis.block
+           name: current-dir
+           subPath: channel-artifacts/genesis.block
+         - mountPath: /var/hyperledger/production
+           name: current-dir
+           subPath: data/orderer
+        ports:
+         - containerPort: 7050
+      volumes:
+       - name: current-dir
+         persistentVolumeClaim:
+           claimName: default-fabric-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: default
+  name: orderer
+spec:
+  type: NodePort
+  selector:
+    org: orderer-example-com
+    name: orderer
+  ports:
+    - name: listen-endpoint
+      protocol: TCP
+      port: 7050
+      targetPort: 7050
+      nodePort: 31120

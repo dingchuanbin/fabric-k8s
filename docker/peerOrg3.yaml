@@ -1,0 +1,230 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: default
+  name: ca-org3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      org: org3-example-com
+      name: ca-org3
+  template:
+    metadata:
+      labels:
+        org: org3-example-com
+        name: ca-org3
+    spec:
+      containers:
+        - name: ca-org3
+          image: hyperledger/fabric-ca:1.4.3
+          env:
+          - name:  FABRIC_CA_HOME
+            value: /etc/hyperledger/fabric-ca-server
+          - name:  FABRIC_CA_SERVER_CA_NAME
+            value: ca-org3
+          - name: FABRIC_CA_SERVER_CA_CERTFILE
+            value: /etc/hyperledger/fabric-ca-server-config/ca.org3.example.com-cert.pem
+          - name: FABRIC_CA_SERVER_CA_KEYFILE
+            value: /etc/hyperledger/fabric-ca-server-config/64c29fc14e78864075833a24e00883449a71a62d444839484104b2571d5cd69c_sk
+          - name:  FABRIC_CA_SERVER_TLS_ENABLED
+            value: "true"
+          ports:
+            - containerPort: 7054
+          command: ["sh"]
+          args: ["-c", "fabric-ca-server start --ca.certfile /etc/hyperledger/fabric-ca-server-config/ca.org3.example.com-cert.pem --ca.keyfile /etc/hyperledger/fabric-ca-server-config/64c29fc14e78864075833a24e00883449a71a62d444839484104b2571d5cd69c_sk -b admin:adminpw -d"]
+          volumeMounts:
+            - mountPath: /etc/hyperledger/fabric-ca-server-config/
+              name: current-dir
+              subPath: crypto-config/peerOrganizations/org3.example.com/ca/
+            - mountPath: /etc/hyperledger/fabric-ca-server
+              name: current-dir
+              subPath: data/org3/ca
+      volumes:
+        - name: current-dir
+          persistentVolumeClaim:
+            claimName: default-fabric-pvc
+--- 
+apiVersion: v1
+kind: Service
+metadata:
+   namespace: default
+   name: ca-org3
+spec:
+ selector:
+   org: org3-example-com
+   name: ca-org3
+ clusterIP: None
+ ports:
+   - name: endpoint
+     protocol: TCP
+     port: 7054
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: default
+  name: couchdb-org3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      org: org3-example-com
+      name: couchdb-org3
+  template:
+    metadata:
+      labels:
+        name: couchdb-org3
+        org: org3-example-com
+    spec:
+      containers:
+      - name: couchdb-org3
+        image: hyperledger/fabric-couchdb
+        env:
+        - name: COUCHDB_USER
+          value: org3
+        - name: COUCHDB_PASSWORD
+          value: org3pass
+        ports:
+        - containerPort: 5984
+        volumeMounts:
+        - name: current-dir
+          mountPath: /opt/couchdb/data
+          subPath: data/org3/couchdb
+      volumes:
+        - name: current-dir
+          persistentVolumeClaim:
+            claimName: default-fabric-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: default
+  name: couchdb-org3
+spec:
+  clusterIP: None
+  selector:
+    name: couchdb-org3
+    org: org3-example-com
+  ports:
+    - name: listen-endpoint
+      protocol: TCP
+      port: 5984
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: default
+  name:	peer0-org3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      org: org3-example-com
+      name: peer0-org3
+  template:
+    metadata:
+      labels:
+        name: peer0-org3
+        org: org3-example-com
+    spec:
+      containers:
+      - name: peer0-org3
+        image: hyperledger/fabric-peer:1.4.3
+        env:
+        - name: CORE_VM_ENDPOINT
+          value: "unix:///host/var/run/docker.sock"
+        - name: CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE
+          value: "host"
+        - name: FABRIC_LOGGING_SPEC
+          value: "DEBUG"
+        - name: CORE_PEER_TLS_ENABLED
+          value: "true"
+        - name: CORE_PEER_GOSSIP_USELEADERELECTION
+          value: "true"
+        - name: CORE_PEER_GOSSIP_ORGLEADER
+          value: "false" 
+        - name: CORE_PEER_PROFILE_ENABLED
+          value: "true"
+        - name: CORE_PEER_TLS_CERT_FILE
+          value: "/etc/hyperledger/fabric/tls/server.crt"
+        - name: CORE_PEER_TLS_KEY_FILE
+          value: "/etc/hyperledger/fabric/tls/server.key"
+        - name: CORE_PEER_TLS_ROOTCERT_FILE
+          value: "/etc/hyperledger/fabric/tls/ca.crt"
+        - name: CORE_PEER_TLS_SERVERHOSTOVERRIDE
+          value: peer0.org3.example.com
+        - name: CORE_PEER_ID
+          value: "peer0.org3.example.com"
+        - name: CORE_PEER_ADDRESS
+          value: "peer0.org3.example.com:7051"
+        - name: CORE_PEER_GOSSIP_EXTERNALENDPOINT
+          value: "peer0.org3.example.com:7051"
+        - name: CORE_PEER_LOCALMSPID
+          value: "Org3MSP"
+        - name: CORE_PEER_ADDRESSAUTODETECT
+          value: "true"
+        - name: CORE_LEDGER_STATE_STATEDATABASE
+          value: "CouchDB"
+        - name: CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS
+          value: "couchdb-org3:5984"
+        - name: CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME
+          value: org3
+        - name: CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD
+          value: org3pass
+        - name: GODEBUG
+          value: netdns=go
+
+        workingDir: /opt/gopath/src/github.com/hyperledger/fabric/peer
+        ports:
+         - containerPort: 7051
+         - containerPort: 7052
+         - containerPort: 7053
+        command: ["peer"]
+        args: ["node","start"]
+        volumeMounts:
+         - mountPath: /etc/hyperledger/fabric/msp
+           name: current-dir
+           subPath: crypto-config/peerOrganizations/org3.example.com/peers/peer0.org3.example.com/msp
+         - mountPath: /etc/hyperledger/fabric/tls
+           name: current-dir
+           subPath: crypto-config/peerOrganizations/org3.example.com/peers/peer0.org3.example.com/tls
+         - mountPath: /var/hyperledger/production/
+           name: current-dir
+           subPath: data/org3/peer
+         - mountPath: /host/var/run
+           name: run
+      volumes:
+        - name: current-dir
+          persistentVolumeClaim:
+            claimName: default-fabric-pvc
+        - name: run
+          hostPath:
+            path: /var/run
+---
+apiVersion: v1
+kind: Service
+metadata:
+   namespace: default
+   name: peer0-org3
+spec:
+  type: NodePort
+  selector:
+    name: peer0-org3
+    org: org3-example-com
+  ports:
+    - name: listen-endpoint
+      protocol: TCP
+      port: 7051
+      targetPort: 7051
+      nodePort: 31115
+
+    - name: chaincode-listen
+      protocol: TCP
+      port: 7052
+      targetPort: 7052
+
+    - name: event-listen
+      protocol: TCP
+      port: 7053
+      targetPort: 7053
